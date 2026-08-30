@@ -3,7 +3,7 @@ from functions.get_files_info import get_files_info
 
 def main():
 
-    directories = [".", "pkg", "/bin", ".."]
+    directories = [".", "pkg", "/bin", "../"]
     for directory in directories:
         files_info = get_files_info("calculator", directory)
 

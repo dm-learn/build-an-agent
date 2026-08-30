@@ -1,5 +1,4 @@
 import os
-from google.genai import types
 
 
 MAX_CHARS = 10000
@@ -29,17 +28,20 @@ def get_file_content(working_directory, file_path):
         return f"Error: getting file content: {exc}"
 
 
-schema_get_file_content = types.FunctionDeclaration(
-    name="get_file_content",
-    description="Returns a string containing the content of a file",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "file_path": types.Schema(
-                type=types.Type.STRING,
-                description="Path to the file, relative to the working directory",
-            ),
+schema_get_file_content = {
+    "type": "function",
+    "function": {
+        "name": "get_file_content",
+        "description": "Returns a string containing the content of a file",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the file, relative to the working directory",
+                },
+            },
+            "required": ["file_path"],
         },
-        required=["file_path"],
-    ),
-)
+    },
+}

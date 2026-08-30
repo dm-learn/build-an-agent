@@ -1,10 +1,10 @@
+import json
 import os
 import sys
 import argparse
 from dotenv import load_dotenv
 
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 from prompts import system_prompt
 from call_function import available_functions, call_function
@@ -18,65 +18,56 @@ def main():
     args = parser.parse_args()
     
     load_dotenv()
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("OPENROUTER_API_KEY")
 
     if api_key is None:
-        raise RuntimeError("GEMINI_API_KEY not found in .env")
+        raise RuntimeError("OPENROUTER_API_KEY environmnet variable not set")
 
-    client = genai.Client(api_key=api_key)
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
 
-    messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": args.user_prompt},
+    ]
+
+    if args.verbose:
+        print(f"User prompt: {args.user_prompt}\n")
 
     for _ in range(20):
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=messages,
-            config=types.GenerateContentConfig(
-                tools=[available_functions],
-                system_instruction=system_prompt,
-                # temperature=0,
-            ),
+        response = client.chat.completions.create(
+            model="openrouter/free",
+            messages=messages,
+            tools=available_functions,
         )
 
-        if response.usage_metadata is None:
-            raise RuntimeError("API reqest failed, usage_metadata is None")
-        
-        for candidate in response.candidates:
-            messages.append(candidate.content)
+        if args.verbose:
+            print("Prompt tokens:", response.usage.prompt_tokens)
+            print("Response tokens:", response.usage.completion_tokens)
 
-        function_calls = response.function_calls
-        function_results = []
-        if function_calls is not None:
-            for function_call in function_calls:
-                
-                function_call_result = call_function(function_call, args.verbose)
+        message = response.choices[0].message
+        messages.append(message)
 
-                if not function_call_result.parts:
-                    raise RuntimeError("function_call.parts is empty!")
-                
-                function_call_parts0 = function_call_result.parts[0]
-                if function_call_parts0.function_response is None:
-                    raise RuntimeError("function_response is None!")
-                
-                if function_call_parts0.function_response.response is None:
-                    raise RuntimeError("function call response is None!")
-                
-                function_results.append(function_call_parts0)
-
-                if args.verbose:
-                    print(f"-> {function_call_parts0.function_response.response}")
-
-            messages.append(types.Content(role="user", parts=function_results))
-        
-        else:
-            print(f"Answer: {response.text}")
-
-            if args.verbose:
-                print(f"User prompt: {args.user_prompt}")
-                print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-                print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
-            
+        if not message.tool_calls:
+            print(f"Final message:")
+            print(message.content)
             return
+
+        for tool_call in message.tool_calls:
+            if tool_call.type != "function":
+                continue
+            function_args = json.loads(tool_call.function.arguments or "{}")
+            print(f"Calling function: {tool_call.function.name}({function_args})")
+
+            result_message = call_function(tool_call, args.verbose)
+
+            if not result_message.get("content"):
+                raise RuntimeError(f"Empty function response for {tool_call.function.name}")
+            if args.verbose:
+                print(f"-> {result_message['content']}")
+            messages.append(result_message)
     
     print("Maximum iterations reached before final response")
     sys.exit(1)
